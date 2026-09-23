@@ -1,41 +1,141 @@
-# ─── API Security & Routing ────────────────────────────────────────────────
+# ─── Dr. Arman Kabir Care - Production .htaccess ────────────────────────────
 
-# Enable rewrite engine
+# Enable Rewrite Engine
 RewriteEngine On
 
-# Protect sensitive files and leaked debug artifacts.
-<FilesMatch "^(error_log|.*\.(env|config|sql|md|gitignore|log|cache|bak|old|orig|swp|tmp))$">
-    Require all denied
-</FilesMatch>
+# ─── Security Headers ─────────────────────────────────────────────────────
+<IfModule mod_headers.c>
+    # HSTS (6 months)
+    Header always set Strict-Transport-Security "max-age=15768000; includeSubDomains"
+    # Prevent MIME-type sniffing
+    Header always set X-Content-Type-Options "nosniff"
+    # Prevent clickjacking
+    Header always set X-Frame-Options "DENY"
+    # Enable XSS filter
+    Header always set X-XSS-Protection "1; mode=block"
+    # Referrer policy
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    # Permissions policy
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    # Content Security Policy
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://api.drarmankabir.com https://drarmankabir.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+</IfModule>
 
-# Protect config.php from direct access (only allow includes)
-<Files "config.php">
-    Require all denied
-</Files>
-
-# Protect database.php
-<Files "database.php">
-    Require all denied
-</Files>
-
-# CORS headers
+# ─── CORS for API ─────────────────────────────────────────────────────────
 <IfModule mod_headers.c>
     Header always set Access-Control-Allow-Origin "https://drarmankabir.com"
     Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
     Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-CSRF-Token"
     Header always set Access-Control-Allow-Credentials "true"
-    Header always set X-Content-Type-Options "nosniff"
-    Header always set X-Frame-Options "DENY"
-    Header always set X-XSS-Protection "1; mode=block"
 </IfModule>
 
-# Handle preflight OPTIONS requests
+# ─── Handle OPTIONS preflight ─────────────────────────────────────────────
 RewriteCond %{REQUEST_METHOD} OPTIONS
 RewriteRule ^(.*)$ $1 [R=200,L]
 
-# Block PHP execution in uploads directory
-RewriteRule ^uploads/.*\.php$ - [F,L]
+# ─── Force HTTPS ─────────────────────────────────────────────────────────
+RewriteCond %{HTTPS} off
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
 
-# Route .php requests normally
-RewriteCond %{REQUEST_FILENAME} -f
-RewriteRule ^ - [L]
+# ─── Remove trailing slash ────────────────────────────────────────────────
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.+)/$ /$1 [R=301,L]
+
+# ─── phpMyAdmin ─────────────────────────────────────────────────────────
+# Allow phpMyAdmin to work with SPA routing
+RewriteRule ^phpmyadmin/(.*)$ phpmyadmin/$1 [L]
+
+# ─── SPA Routing ─────────────────────────────────────────────────────────
+# Serve index.html for all non-file, non-API routes (React SPA)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !^/api/
+RewriteCond %{REQUEST_URI} !^/phpmyadmin/
+RewriteRule ^ index.html [L]
+
+# ─── API Routing ─────────────────────────────────────────────────────────
+# Route /api/* to /api/*.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_URI} ^/api/([^.]+)$
+RewriteRule ^api/(.+)$ api/$1.php [L,QSA]
+
+# ─── Protect Sensitive Files ──────────────────────────────────────────────
+# Explicitly allow env.json for frontend configuration first
+<FilesMatch "^env\.json$">
+    Require all granted
+</FilesMatch>
+
+# Deny leaked debug artifacts and backup/config files from public exposure.
+<FilesMatch "^(error_log|.*\.(env|config|sql|md|gitignore|log|cache|bak|old|orig|swp|tmp|save))$">
+    Require all denied
+</FilesMatch>
+
+# Deny access to dot files
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+# ─── Deny access to server-data directory ─────────────────────────────────
+RewriteRule ^server-data/ - [F,L]
+
+# ─── Deny access to PHP files in uploads ─────────────────────────────────
+<FilesMatch "^uploads/.*\.php$">
+    Require all denied
+</FilesMatch>
+
+# ─── Browser Caching ──────────────────────────────────────────────────────
+<IfModule mod_expires.c>
+    ExpiresActive On
+    # Images
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/webp "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType image/x-icon "access plus 1 year"
+
+    # Fonts
+    ExpiresByType font/woff "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 year"
+    ExpiresByType font/ttf "access plus 1 year"
+    ExpiresByType font/eot "access plus 1 year"
+
+    # CSS, JavaScript
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType text/javascript "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+
+    # HTML, JSON
+    ExpiresByType text/html "access plus 0 seconds"
+    ExpiresByType application/json "access plus 0 seconds"
+
+    # PDF
+    ExpiresByType application/pdf "access plus 1 month"
+</IfModule>
+
+# ─── Compression ─────────────────────────────────────────────────────────
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript
+    AddOutputFilterByType DEFLATE application/javascript application/json application/xml
+    AddOutputFilterByType DEFLATE image/svg+xml font/woff font/woff2
+</IfModule>
+
+# ─── File Cache Busting ───────────────────────────────────────────────────
+# Cache-bust via query string: assets/js/main.js?v=2.0.0
+<IfModule mod_rewrite.c>
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^(.*\.(js|css|png|jpg|gif|svg|woff|woff2))(?:\?.*)$ $1 [L]
+</IfModule>
+
+# ─── Limit Request Methods ────────────────────────────────────────────────
+RewriteCond %{REQUEST_METHOD} !^(GET|HEAD|POST|PUT|DELETE|OPTIONS)$
+RewriteRule .* - [F,L]
+
+# ─── Disable Directory Browsing ───────────────────────────────────────────
+Options -Indexes
+
+# ─── Server Signature ─────────────────────────────────────────────────────
+ServerSignature Off
+ServerTokens Prod
+
