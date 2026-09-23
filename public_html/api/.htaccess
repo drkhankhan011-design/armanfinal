@@ -3,8 +3,8 @@
 # Enable rewrite engine
 RewriteEngine On
 
-# Protect sensitive files
-<FilesMatch "\.(env|config|sql|md|gitignore)$">
+# Protect sensitive files and leaked debug artifacts.
+<FilesMatch "^(error_log|.*\.(env|config|sql|md|gitignore|log|cache|bak|old|orig|swp|tmp))$">
     Require all denied
 </FilesMatch>
 
