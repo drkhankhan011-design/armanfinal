@@ -1,12 +1,15 @@
-// ─── Migration & Sync Hook (PHP/MySQL Backend) ───────────────────────────────
-// Migration is complete — all data is stored server-side via the PHP API.
-// This hook is kept for API compatibility and returns "complete" immediately.
-// No localStorage used.
+// Migration & sync compatibility hook — intentionally server-owned.
+// There is no client migration, offline queue, or browser data snapshot.
 
 import { useCallback, useState } from "react";
-import type { MigrationProgress, SyncStatus } from "../lib/hybridStorage";
 
 export type MigrationStatus = "idle" | "running" | "complete" | "failed";
+
+export interface MigrationProgress {
+  total: number;
+  migrated: number;
+  message: string;
+}
 
 export interface MigrationState {
   migrationStatus: MigrationStatus;
@@ -17,19 +20,16 @@ export interface MigrationState {
 const COMPLETE_PROGRESS: MigrationProgress = {
   total: 1,
   migrated: 1,
-  message: "All data is stored server-side via PHP API",
+  message: "All data is stored server-side via the PHP API",
 };
 
 export function useMigration(
-  _actor: unknown,
+  _serverContext?: unknown,
   _invalidateAll?: () => void,
 ): MigrationState {
   const [status] = useState<MigrationStatus>("complete");
   const [progress] = useState<MigrationProgress>(COMPLETE_PROGRESS);
-
-  const runManualMigration = useCallback(() => {
-    // Migration is already complete
-  }, []);
+  const runManualMigration = useCallback(() => undefined, []);
 
   return {
     migrationStatus: status,
@@ -38,15 +38,30 @@ export function useMigration(
   };
 }
 
-// ── Sync status hook (offline/online only) ────────────────────────────────────
-
-export function useSyncStatus(): SyncStatus {
-  const [syncStatus] = useState<SyncStatus>({
-    isOnline: navigator.onLine,
-    pendingChanges: 0,
-  });
-
-  return syncStatus;
+export interface SyncStatus {
+  isOnline: boolean;
+  pendingChanges: number;
+  lastSyncAt?: Date;
 }
 
-export { getPendingChangesCount, markMigrationDone, isMigrationDone } from "../lib/hybridStorage";
+/**
+ * Reports connectivity only. It never represents locally queued business data.
+ */
+export function useSyncStatus(): SyncStatus {
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
+
+  React.useEffect(() => {
+    const online = () => setIsOnline(true);
+    const offline = () => setIsOnline(false);
+    window.addEventListener("online", online);
+    window.addEventListener("offline", offline);
+    return () => {
+      window.removeEventListener("online", online);
+      window.removeEventListener("offline", offline);
+    };
+  }, []);
+
+  return { isOnline, pendingChanges: 0 };
+}
