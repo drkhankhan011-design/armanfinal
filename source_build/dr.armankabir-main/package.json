@@ -6,6 +6,7 @@
     "build": "npm --prefix src/frontend run build",
     "typecheck": "npm --prefix src/frontend run typecheck",
     "check": "npm --prefix src/frontend run check",
+    "audit:storage": "node audit-server-owned-data.mjs",
     "deploy:cpanel": "bash deploy.sh"
   },
   "devDependencies": {

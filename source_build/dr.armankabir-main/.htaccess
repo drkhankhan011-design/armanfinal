@@ -1,17 +1,10 @@
-# cPanel/.htaccess Configuration for React SPA
+# cPanel/.htaccess Configuration for React SPA and PHP API
+
 # Enable GZIP compression
 <IfModule mod_deflate.c>
-  AddOutputFilterByType DEFLATE text/html
-  AddOutputFilterByType DEFLATE text/plain
-  AddOutputFilterByType DEFLATE text/xml
-  AddOutputFilterByType DEFLATE text/css
-  AddOutputFilterByType DEFLATE text/javascript
-  AddOutputFilterByType DEFLATE application/xml
-  AddOutputFilterByType DEFLATE application/xhtml+xml
-  AddOutputFilterByType DEFLATE application/rss+xml
-  AddOutputFilterByType DEFLATE application/javascript
-  AddOutputFilterByType DEFLATE application/x-javascript
-  AddOutputFilterByType DEFLATE application/json
+  AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript
+  AddOutputFilterByType DEFLATE application/xml application/xhtml+xml application/rss+xml
+  AddOutputFilterByType DEFLATE application/javascript application/x-javascript application/json
 </IfModule>
 
 # Enable browser caching
@@ -30,20 +23,20 @@
   ExpiresDefault "access plus 2 days"
 </IfModule>
 
-# Rewrite rules for React Router (SPA)
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
-  
-  # Don't rewrite if it's a real file
-  RewriteCond %{REQUEST_FILENAME} -f
-  RewriteRule ^ - [L]
-  
-  # Don't rewrite if it's a real directory
+
+  # Keep the PHP REST API and phpMyAdmin outside the React SPA fallback.
+  RewriteRule ^api(?:/|$) - [L]
+  RewriteRule ^phpmyadmin(?:/|$) - [L]
+
+  # Serve existing files and directories normally.
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
-  
-  # Rewrite everything else to index.html
+
+  # Send client-side React routes to the SPA entry point.
   RewriteRule ^ index.html [L]
 </IfModule>
 
@@ -57,7 +50,7 @@
   Header set Permissions-Policy "geolocation=(), microphone=(), camera=()"
 </IfModule>
 
-# Protect sensitive files from access
+# Protect hidden files
 <FilesMatch "^\.">
   <IfModule mod_authz_core.c>
     Require all denied
@@ -68,8 +61,9 @@
   </IfModule>
 </FilesMatch>
 
-# Prevent access to .env and config files
-<FilesMatch "\.(env|env\.json|config\.js|php)$">
+# Protect environment and JavaScript configuration files.
+# Do not block .php globally: the REST API is implemented in PHP.
+<FilesMatch "^(\.env|env\.json|config\.js|.*\.map)$">
   <IfModule mod_authz_core.c>
     Require all denied
   </IfModule>
@@ -78,20 +72,3 @@
     Deny from all
   </IfModule>
 </FilesMatch>
-
-# Prevent direct access to node_modules or source maps
-<FilesMatch "\.map$">
-  <IfModule mod_authz_core.c>
-    Require all denied
-  </IfModule>
-  <IfModule !mod_authz_core.c>
-    Order allow,deny
-    Deny from all
-  </IfModule>
-</FilesMatch>
-
-# Allow PhpMyAdmin (if installed)
-<IfModule mod_rewrite.c>
-  RewriteCond %{REQUEST_URI} ^/phpmyadmin [NC]
-  RewriteRule ^ - [L]
-</IfModule>

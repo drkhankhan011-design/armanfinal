@@ -1,159 +1,70 @@
 #!/bin/bash
 # cPanel Deployment Script
-# Deploy Dr. Arman Kabir's Care application to cPanel hosting
-# This script handles both the frontend React app and any Node.js backend
-set -euo pipefail
+# Build the React frontend and deploy it without deleting the PHP API.
+set -Eeuo pipefail
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+FRONTEND_DIR="$SCRIPT_DIR/src/frontend"
+PUBLIC_HTML="${CPANEL_PUBLIC_HTML:-$HOME/public_html}"
+BACKUP_DIR=""
 
-echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║       cPanel Deployment Script - Dr. Arman Care       ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
-
-# Define cleanup function for exit
 cleanup() {
-    if [ $1 -eq 0 ]; then
-        echo -e "${GREEN}✓ Deployment completed successfully!${NC}"
-    else
-        echo -e "${RED}✗ Deployment failed with exit code $1${NC}"
-        echo -e "${YELLOW}Rolling back...${NC}"
-        if [ -d "public_html.backup" ]; then
-            rm -rf public_html
-            mv public_html.backup public_html
-            echo -e "${YELLOW}Rollback complete${NC}"
-        fi
+    local exit_code=$?
+    if [[ "$exit_code" -ne 0 && -n "$BACKUP_DIR" && -d "$BACKUP_DIR" ]]; then
+        echo "Deployment failed; restoring frontend backup..."
+        rm -rf "$PUBLIC_HTML/assets" "$PUBLIC_HTML/index.html" "$PUBLIC_HTML/.htaccess"
+        cp -a "$BACKUP_DIR/." "$PUBLIC_HTML/"
+        rm -rf "$BACKUP_DIR"
+    elif [[ -n "$BACKUP_DIR" && -d "$BACKUP_DIR" ]]; then
+        rm -rf "$BACKUP_DIR"
     fi
-    exit $1
+    exit "$exit_code"
 }
+trap cleanup EXIT
 
-# Handle script interruption
-trap 'cleanup 1' INT TERM ERR
+command -v node >/dev/null 2>&1 || { echo "Node.js is required" >&2; exit 1; }
+command -v npm >/dev/null 2>&1 || { echo "npm is required" >&2; exit 1; }
 
-# Check prerequisites
-echo -e "${YELLOW}→ Checking prerequisites...${NC}"
-if ! command -v node &> /dev/null; then
-    echo -e "${RED}✗ Node.js is not installed${NC}"
-    cleanup 1
-fi
-if ! command -v pnpm &> /dev/null; then
-    echo -e "${RED}✗ pnpm is not installed. Install with: npm install -g pnpm${NC}"
-    cleanup 1
-fi
-
-echo -e "${GREEN}✓ Node.js $(node --version)${NC}"
-echo -e "${GREEN}✓ pnpm $(pnpm --version)${NC}"
-
-# Install root dependencies
-echo -e "${YELLOW}→ Installing root dependencies...${NC}"
-pnpm install --prefer-offline
-echo -e "${GREEN}✓ Root dependencies installed${NC}"
-
-# Build frontend
-echo -e "${YELLOW}→ Building frontend application...${NC}"
-cd src/frontend
-pnpm install --prefer-offline
-if ! pnpm build; then
-    echo -e "${RED}✗ Frontend build failed${NC}"
-    cd ../..
-    cleanup 1
-fi
-echo -e "${GREEN}✓ Frontend build complete${NC}"
-
-# Setup environment
-echo -e "${YELLOW}→ Setting up environment configuration...${NC}"
-if [ -f "env.json" ] && [ -f "dist/env.json" ]; then
-    echo -e "${GREEN}✓ env.json configured${NC}"
-elif [ -f "env.json" ]; then
-    cp env.json dist/
-    echo -e "${GREEN}✓ env.json copied to dist${NC}"
-else
-    echo -e "${YELLOW}⚠ env.json not found, creating defaults...${NC}"
-    cat > dist/env.json << 'EOF'
-{
-  "apiBaseUrl": "https://yourdomain.com/api",
-  "environment": "production",
-  "version": "1.0.0"
-}
-EOF
-    echo -e "${GREEN}✓ Default env.json created${NC}"
-fi
-
-cd ../..
-
-# Setup public_html
-echo -e "${YELLOW}→ Setting up cPanel deployment directory...${NC}"
-PUBLIC_HTML="${CPANEL_PUBLIC_HTML:-public_html}"
-
-# Create backup
-if [ -d "$PUBLIC_HTML" ] && [ "$(ls -A $PUBLIC_HTML)" ]; then
-    BACKUP_NAME="${PUBLIC_HTML}.backup.$(date +%s)"
-    echo -e "${YELLOW}  Creating backup: $BACKUP_NAME${NC}"
-    cp -r "$PUBLIC_HTML" "$BACKUP_NAME"
-    echo -e "${GREEN}✓ Backup created${NC}"
-fi
-
-# Deploy files
-echo -e "${YELLOW}→ Deploying application to $PUBLIC_HTML...${NC}"
+node_version="$(node --version)"
+echo "Using Node.js $node_version"
 mkdir -p "$PUBLIC_HTML"
-rm -rf "${PUBLIC_HTML:?}"/*
-cp -r src/frontend/dist/* "$PUBLIC_HTML/"
 
-# Verify deployment
-echo -e "${YELLOW}→ Verifying deployment...${NC}"
-if [ -f "$PUBLIC_HTML/index.html" ]; then
-    echo -e "${GREEN}✓ index.html deployed${NC}"
+# Back up only frontend files. The API directory is deliberately preserved.
+BACKUP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/arman-cpanel-backup.XXXXXX")"
+for item in index.html .htaccess assets; do
+    if [[ -e "$PUBLIC_HTML/$item" ]]; then
+        cp -a "$PUBLIC_HTML/$item" "$BACKUP_DIR/"
+    fi
+done
+
+# Install from the existing lockfile when available, then build the frontend.
+cd "$FRONTEND_DIR"
+if [[ -f package-lock.json ]]; then
+    npm ci
 else
-    echo -e "${RED}✗ index.html not found in deployment${NC}"
-    cleanup 1
+    npm install
+fi
+npm run build
+
+# Deploy only the generated frontend. Do not remove public_html/api.
+cp -a dist/. "$PUBLIC_HTML/"
+cp -a "$SCRIPT_DIR/.htaccess" "$PUBLIC_HTML/.htaccess"
+
+# On a first deployment, populate the API from the repository if it is absent.
+if [[ ! -d "$PUBLIC_HTML/api" && -d "$REPO_ROOT/public_html/api" ]]; then
+    cp -a "$REPO_ROOT/public_html/api" "$PUBLIC_HTML/api"
 fi
 
-if [ -f "$PUBLIC_HTML/.htaccess" ]; then
-    echo -e "${GREEN}✓ .htaccess configured${NC}"
-else
-    echo -e "${YELLOW}⚠ .htaccess not found, copying...${NC}"
-    cp .htaccess "$PUBLIC_HTML/"
-    echo -e "${GREEN}✓ .htaccess copied${NC}"
-fi
+# Ensure PHP API configuration exists without overwriting an existing cPanel config.
+for file in config.php env.json; do
+    if [[ ! -e "$PUBLIC_HTML/$file" && -e "$REPO_ROOT/public_html/$file" ]]; then
+        cp -a "$REPO_ROOT/public_html/$file" "$PUBLIC_HTML/$file"
+    fi
+done
 
-# Set correct permissions
-echo -e "${YELLOW}→ Setting file permissions...${NC}"
-find "$PUBLIC_HTML" -type f -exec chmod 644 {} \;
-find "$PUBLIC_HTML" -type d -exec chmod 755 {} \;
-echo -e "${GREEN}✓ Permissions set (files: 644, directories: 755)${NC}"
+find "$PUBLIC_HTML" -type f -exec chmod 644 {} +
+find "$PUBLIC_HTML" -type d -exec chmod 755 {} +
 
-# Display summary
-echo ""
-echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║           Deployment Summary & Next Steps             ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
-echo ""
-echo -e "${GREEN}✓ Application deployed to: $PUBLIC_HTML${NC}"
-echo ""
-echo -e "${YELLOW}Next Steps in cPanel:${NC}"
-echo "  1. Go to File Manager → $PUBLIC_HTML"
-echo "  2. Verify files are present (index.html, .htaccess, js/, css/, assets/)"
-echo "  3. Go to SSL/TLS Status → Install AutoSSL (recommended)"
-echo "  4. Test: Visit your domain in browser"
-echo "  5. If 404 on refresh, check that mod_rewrite is enabled"
-echo ""
-echo -e "${YELLOW}Testing SPA Routing:${NC}"
-echo "  • Navigate to: https://yourdomain.com/dashboard"
-echo "  • Refresh page - should still show the app (not 404)"
-echo "  • Open browser console (F12) for any errors"
-echo ""
-echo -e "${YELLOW}PhpMyAdmin Access:${NC}"
-echo "  • Via cPanel: Home → Databases → phpMyAdmin"
-echo "  • Or direct URL: https://yourdomain.com/phpmyadmin"
-echo ""
-echo -e "${YELLOW}For Troubleshooting:${NC}"
-echo "  • Check cPanel Error Log: Home → Error Log"
-echo "  • View .htaccess configuration: $PUBLIC_HTML/.htaccess"
-echo "  • Test mod_rewrite: Create test.html and check routing"
-echo ""
-
-cleanup 0
+echo "Deployment completed successfully: $PUBLIC_HTML"
+echo "The existing public_html/api directory was preserved."
