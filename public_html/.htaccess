@@ -18,7 +18,7 @@ RewriteEngine On
     # Permissions policy
     Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
     # Content Security Policy
-    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https: https://maps.gstatic.com https://maps.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https:; frame-src 'self' https://maps.google.com https://www.google.com; media-src 'self' data: blob:; worker-src 'self' blob:;"
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://drarmankabir.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 </IfModule>
 
 # ─── CORS for API ─────────────────────────────────────────────────────────
@@ -33,7 +33,7 @@ RewriteEngine On
 RewriteCond %{REQUEST_METHOD} OPTIONS
 RewriteRule ^(.*)$ $1 [R=200,L]
 
-# ─── Force HTTPS ──────────────────────────────────────────────────────────
+# ─── Force HTTPS ─────────────────────────────────────────────────────────
 RewriteCond %{HTTPS} off
 RewriteCond %{HTTP:X-Forwarded-Proto} !https
 RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
@@ -42,11 +42,11 @@ RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.+)/$ /$1 [R=301,L]
 
-# ─── phpMyAdmin ──────────────────────────────────────────────────────────
+# ─── phpMyAdmin ─────────────────────────────────────────────────────────
 # Allow phpMyAdmin to work with SPA routing
 RewriteRule ^phpmyadmin/(.*)$ phpmyadmin/$1 [L]
 
-# ─── SPA Routing ──────────────────────────────────────────────────────────
+# ─── SPA Routing ─────────────────────────────────────────────────────────
 # Serve index.html for all non-file, non-API routes (React SPA)
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
@@ -54,7 +54,7 @@ RewriteCond %{REQUEST_URI} !^/api/
 RewriteCond %{REQUEST_URI} !^/phpmyadmin/
 RewriteRule ^ index.html [L]
 
-# ─── API Routing ──────────────────────────────────────────────────────────
+# ─── API Routing ─────────────────────────────────────────────────────────
 # Route /api/* to /api/*.php
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_URI} ^/api/([^.]+)$
@@ -66,12 +66,13 @@ RewriteRule ^api/(.+)$ api/$1.php [L,QSA]
     Require all granted
 </FilesMatch>
 
-<FilesMatch "\.(config|sql|md|gitignore|log|cache)$">
+# Block common sensitive / leaked files and backup copies.
+<FilesMatch "^(error_log|.*\.(config|sql|md|gitignore|log|cache|bak|old|orig|swp|tmp))$">
     Require all denied
 </FilesMatch>
 
 # Deny access to dot files
-<FilesMatch "^\.">
+<FilesMatch "^\."> 
     Require all denied
 </FilesMatch>
 
@@ -93,27 +94,27 @@ RewriteRule ^server-data/ - [F,L]
     ExpiresByType image/webp "access plus 1 year"
     ExpiresByType image/svg+xml "access plus 1 year"
     ExpiresByType image/x-icon "access plus 1 year"
-    
+
     # Fonts
     ExpiresByType font/woff "access plus 1 year"
     ExpiresByType font/woff2 "access plus 1 year"
     ExpiresByType font/ttf "access plus 1 year"
     ExpiresByType font/eot "access plus 1 year"
-    
+
     # CSS, JavaScript
     ExpiresByType text/css "access plus 1 month"
     ExpiresByType text/javascript "access plus 1 month"
     ExpiresByType application/javascript "access plus 1 month"
-    
+
     # HTML, JSON
     ExpiresByType text/html "access plus 0 seconds"
     ExpiresByType application/json "access plus 0 seconds"
-    
+
     # PDF
     ExpiresByType application/pdf "access plus 1 month"
 </IfModule>
 
-# ─── Compression ──────────────────────────────────────────────────────────
+# ─── Compression ────────��────────────────────────────────────────────────
 <IfModule mod_deflate.c>
     AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript
     AddOutputFilterByType DEFLATE application/javascript application/json application/xml
