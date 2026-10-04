@@ -1,17 +1,75 @@
+# ─── Dr. Arman Kabir Care - cPanel Production Security .htaccess ──────────────
+# CRITICAL: This .htaccess protects backend files from public web access
+
+# Enable Rewrite Engine
 RewriteEngine On
 
-# Block leaked debug logs and backup copies in the public assets directory.
-RewriteRule ^(error_log|.*\.(bak|old|orig|tmp|log|swp|save))$ - [F,L]
-RewriteRule ^.*\.(env|config|sql|md|gitignore|cache)$ - [F,L]
+# ─── Block debug logs, backups, and sensitive files ─────────────────────────
+# These are common cPanel deployment leaks and should never be served publicly
+RewriteRule ^(.*/)?(error_log|.*\.(bak|old|orig|tmp|log|swp|save))$ - [F,L]
+RewriteRule ^(.*/)?.*\.(env|env\.json|config|config\.js|sql|md|gitignore|cache)$ - [F,L]
+RewriteRule ^(.*/)?\..*$ - [F,L]
 
-# Also prevent listing of hidden/system files.
-<FilesMatch "^\.">
+# ─── Block all PHP backend files from direct access ──────────────────────────
+# These must be protected even if they exist in public_html during transition
+<FilesMatch "^(setup|config|database|info|migrate|api-router)\.php$">
     Require all denied
 </FilesMatch>
 
-# Block known sensitive extensions and files across the assets directory.
-<FilesMatch "^(error_log|.*\.(bak|old|orig|tmp|log|swp|save|env|config|sql|md|gitignore|cache))$">
-    Require all denied
-</FilesMatch>
+# Block the entire api/setup-test.php endpoint
+RewriteRule ^api/setup-test\.php$ - [F,L]
+RewriteRule ^api/database\.php$ - [F,L]
 
+# Block backup directories
+RewriteRule ^.*\.backup\.[0-9]+(/|$) - [F,L]
+RewriteRule ^assets\.backup/ - [F,L]
 
+# Block wp-includes remnants (orphaned WordPress files)
+RewriteRule ^wp-includes/ - [F,L]
+RewriteRule ^wp-admin/ - [F,L]
+
+# ─── Security Headers ────────────────────────────────────────────────────────
+<IfModule mod_headers.c>
+    # HSTS (6 months)
+    Header always set Strict-Transport-Security "max-age=15768000; includeSubDomains"
+    # Prevent MIME-type sniffing
+    Header always set X-Content-Type-Options "nosniff"
+    # Prevent clickjacking
+    Header always set X-Frame-Options "DENY"
+    # Enable XSS filter
+    Header always set X-XSS-Protection "1; mode=block"
+    # Referrer policy
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    # Permissions policy
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    # Content Security Policy
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.drarmankabir.com"
+</IfModule>
+
+# ─── CORS for API (if using external API endpoint) ──────────────────────────
+<IfModule mod_headers.c>
+    Header always set Access-Control-Allow-Origin "https://drarmankabir.com"
+    Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-CSRF-Token"
+    Header always set Access-Control-Allow-Credentials "true"
+</IfModule>
+
+# ─── Handle OPTIONS preflight ────────────────────────────────────────────────
+RewriteCond %{REQUEST_METHOD} OPTIONS
+RewriteRule ^(.*)$ $1 [R=200,L]
+
+# ─── Force HTTPS ─────────────────────────────────────────────────────────────
+RewriteCond %{HTTPS} off
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+
+# ─── Remove trailing slash ──────────────────────────────────────────────────
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.+)/$ /$1 [R=301,L]
+
+# ─── SPA Routing (React Frontend) ────────────────────────────────────────────
+# Serve index.html for all non-file, non-asset routes
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !^/api/ [NC]
+RewriteRule ^ index.html [L]
